@@ -18,46 +18,74 @@ using namespace ns3;
 // tshark -T text -r ap--4-0.pcap -Y "udp && ip.dst == 10.0.0.6" > 4-0.txt
 // wc -l 4-0.txt | awk '{ print $1 }'
 
-
-
 int main(int argc, char *argv[])
 {
-  uint32_t n_backbones = 5;
-  uint32_t isdynamic = 0;
+
+  // Setting all these values & Friis parameters from command line at the initialization.
+  
+  float path_loss_exponent = 2.4;
+  float reference_loss = 46;
+  float transmission_power = 16.0206;
+  float fading_mean = 0;
+  float fading_var = 32;
+
+  const uint32_t server_port = 28500;
+
   CommandLine cmd;
-  cmd.AddValue ("backbones", "Number of backbone UAVs", n_backbones);
-  cmd.AddValue ("dynamic", "Is dynamic simulation", isdynamic);
+
+  cmd.AddValue ("exp", "Path loss exponent", path_loss_exponent);
+  cmd.AddValue ("ref_loss", "Reference power loss", reference_loss);
+  cmd.AddValue ("tx_power", "Transmission power", transmission_power);
+  cmd.AddValue ("mean", "Fading mean", fading_mean);
+  cmd.AddValue ("var", "Fading variance", fading_var);
 
   cmd.Parse(argc, argv);
-  std::cout<<"nbackbones: "<<n_backbones<<" Dynamic: "<<isdynamic<<std::endl;
   NS_LOG_COMPONENT_DEFINE("ROSNS3Example");
+
+  std::cout<<"Initializing rosns3-server on port: "<<server_port<<std::endl;
+  std::cout<<"Using Friss propagation loss model with:  \n" <<
+             "\t Path loss exponent: "<<path_loss_exponent <<"\n" <<
+             "\t Reference power loss: "<<reference_loss <<"dBmW \n"<< 
+             "\t Tranmission power: "<<transmission_power <<"dBmW \n"<<
+             "\t Fading mean: "<<fading_mean << "\n"<<
+             "\t Fading variance: "<<fading_var
+             <<std::endl;
+
+  loss_model_param_t loss_model_params {.path_loss_exponent = path_loss_exponent, 
+                                        . reference_loss = reference_loss,
+                                        .transmission_power = transmission_power,
+                                        .fading_mean = fading_mean,
+                                        .fading_var = fading_var};
 
   // create the propagation loss model for obtaining the RSS between UAV/UE nodes
   Ptr<PropagationLossModel> log_loss = CreateObject<LogDistancePropagationLossModel> ();
-  log_loss->SetAttribute("Exponent", ns3::DoubleValue(3));
-  log_loss->SetAttribute("ReferenceLoss", ns3::DoubleValue(46));
+  log_loss->SetAttribute("Exponent", ns3::DoubleValue(path_loss_exponent));
+  log_loss->SetAttribute("ReferenceLoss", ns3::DoubleValue(reference_loss));
   Ptr<PropagationLossModel> fading = CreateObject<RandomPropagationLossModel> ();
   const Ptr<NormalRandomVariable> nrv = CreateObject<NormalRandomVariable> ();
-  nrv->SetAttribute ("Mean", DoubleValue (0));
-  nrv->SetAttribute ("Variance", DoubleValue (0));
+  nrv->SetAttribute ("Mean", DoubleValue (fading_mean));
+  nrv->SetAttribute ("Variance", DoubleValue (fading_var));
   fading->SetAttribute("Variable", ns3::PointerValue(nrv));
   log_loss->SetNext(fading);
   Ptr<ConstantPositionMobilityModel> a = CreateObject<ConstantPositionMobilityModel> ();
   Ptr<ConstantPositionMobilityModel> b = CreateObject<ConstantPositionMobilityModel> ();
-  double txPowerDbm = +16.0206; // dBm
-// write the values to a text file
-  std::stringstream ss;
-  if(isdynamic) {
-    ss << std::to_string(n_backbones)<<"_dynamic.txt";
-  }
-  else {
-    ss << std::to_string(n_backbones)<<"_static.txt";
-  }
-  std::string filename = ss.str();
-  std::ofstream file_out;
-  file_out.open(filename, std::ios_base::app);
+  // double txPowerDbm = (double)transmission_power; // dBm
 
-  ROSNS3Server server(28500);
+// write the values to a text file
+  
+  // std::stringstream ss;
+  // if(isdynamic) {
+  //   ss << std::to_string(n_backbones)<<"_dynamic.txt";
+  // }
+  // else {
+  //   ss << std::to_string(n_backbones)<<"_static.txt";
+  // }
+  // std::string filename = ss.str();
+  // std::ofstream file_out;
+  // file_out.open(filename, std::ios_base::app);
+
+  ROSNS3Server server(server_port);
+
   bool use_real_time = false;
   bool sim_start = false;
   bool log_rss = true;
@@ -88,7 +116,7 @@ int main(int argc, char *argv[])
       {
         const Vec3 *v = agents->Get(i)->position();
         int id = agents->Get(i)->id();
-        Vector pos(v->x(), v->y(), v->z());
+        ns3::Vector pos(v->x(), v->y(), v->z());
         mobile_node_t node = {.position = pos, .id = id};
         mobile_nodes.push_back(node);
       }
@@ -96,7 +124,7 @@ int main(int argc, char *argv[])
       // create the comm model and let the simulation run
       if (!sim_start)
       {
-        model = new CoModel(mobile_nodes, backbone_nodes, sim_time, use_real_time);
+        model = new CoModel(mobile_nodes, backbone_nodes, sim_time, use_real_time, loss_model_params);
         NS_LOG_INFO("Created CoModel");
 
         model->run();
@@ -111,27 +139,30 @@ int main(int argc, char *argv[])
       if (Simulator::Now().GetSeconds() > model->total_time - 1)
       {
         
-        // get the RSS values of each ue node
+        // TODO: get the RSS values between the neighboring nodes
 
-        NodeContainer sta_ = model->stas;
-        float tot_rss = 0;
-        for(int i=0; i< sta_.GetN(); i++) {
-          Ptr<Node> sta_node = sta_.Get(i);
+        // NodeContainer sta_ = model->stas;
+        // float tot_rss = 0;
+        // for(int i=0; i< sta_.GetN(); i++) {
+        //   Ptr<Node> sta_node = sta_.Get(i);
 
-          Ptr<MobilityModel> mob = sta_node->GetObject<MobilityModel>();
-          Vector pos = mob->GetPosition();
-          int idx_closest = utils::get_closest_uav(pos, model->backbone);
-          Ptr<Node> closest_uav_node = model->backbone.Get(idx_closest);
-          Ptr<MobilityModel> mob_uav = closest_uav_node->GetObject<MobilityModel>();
-          Vector uav_pos = mob_uav->GetPosition();
-          // double rss = utils::get_rss(pos, model->backbone, log_loss);
-          a->SetPosition(pos);
-          b->SetPosition(uav_pos);
-          double rss = log_loss->CalcRxPower(txPowerDbm, a, b);
-          // std::cout<<"id: "<<i<<" sta pos: "<<pos <<" uav: "<<uav_pos<<" dis: "<<CalculateDistance(pos,uav_pos)<<std::endl;
-          tot_rss += rss;
-        }
-        file_out <<Simulator::Now().GetSeconds()<<" , "<<tot_rss/sta_.GetN()<<std::endl;
+        //   Ptr<MobilityModel> mob = sta_node->GetObject<MobilityModel>();
+        //   Vector pos = mob->GetPosition();
+        //   int idx_closest = utils::get_closest_uav(pos, model->backbone);
+        //   Ptr<Node> closest_uav_node = model->backbone.Get(idx_closest);
+        //   Ptr<MobilityModel> mob_uav = closest_uav_node->GetObject<MobilityModel>();
+        //   Vector uav_pos = mob_uav->GetPosition();
+        //   // double rss = utils::get_rss(pos, model->backbone, log_loss);
+        //   a->SetPosition(pos);
+        //   b->SetPosition(uav_pos);
+        //   double rss = log_loss->CalcRxPower(txPowerDbm, a, b);
+        //   std::cout<<"id: "<<i<<" sta pos: "<<pos <<" uav: "<<uav_pos<<" dis: "<<CalculateDistance(pos,uav_pos)<<std::endl;
+        //   tot_rss += rss;
+        // }
+        // file_out <<Simulator::Now().GetSeconds()<<" , "<<tot_rss/sta_.GetN()<<std::endl;
+
+// TODO: uncomment this to get rss between neighboring UAVs
+// this should be after getting the neighborhoods of each robot.
 
         // get the RSS values of each uav nodes
         // NodeContainer bb_ = model->backbone;
@@ -153,7 +184,7 @@ int main(int argc, char *argv[])
         //   std::cout <<Simulator::Now().GetSeconds()<<" "<<" "<<i<<" "<<rss<<std::endl;
 
         // }
-        std::cout<<Simulator::Now().GetSeconds()<<std::endl;
+        // std::cout<<"Time: "<<Simulator::Now().GetSeconds()<<std::endl;
 
         NS_LOG_DEBUG("Getting updated routing tables at : " << Simulator::Now().GetSeconds());
 

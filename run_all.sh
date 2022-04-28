@@ -1,7 +1,16 @@
+# Deployment parameters
 N_BACKBONES=5
 ISDYNAMIC=0
 MAX_ITERATIONS=1
 TIME="400"
+
+# Friis loss model parameters
+path_loss_exponent=2.4
+reference_loss=46;
+transmission_power=16.0206;
+fading_mean=0;
+fading_var=32;
+
 echo "Max iterations: "$MAX_ITERATIONS
 
 for i in `seq 1 $MAX_ITERATIONS`
@@ -11,7 +20,7 @@ do
     cd ~/ns3/ns-allinone-3.30/ns-3.30
     CMD_RND="export NS_GLOBAL_VALUE="RngRun=$i""
     $CMD_RND
-    CMD_WAF="./waf --run 'rosns3-example --backbones=$N_BACKBONES --dynamic=$ISDYNAMIC'"
+    CMD_WAF="./waf --run 'rosns3-example --exp=$path_loss_exponent --ref_loss=$reference_loss --tx_power=$transmission_power --mean=$fading_mean --var=$fading_var'"
     log="waf_log.log"
     eval $CMD_WAF > "$log" 2>&1 &
     waf_pid=$!

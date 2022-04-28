@@ -292,7 +292,7 @@ void CoModel::create_backbone_devices()
 
     wifiChannel.AddPropagationLoss("ns3::LogDistancePropagationLossModel","Exponent", 
                                     ns3::DoubleValue(loss_model_params.path_loss_exponent),
-                                   "ReferenceLoss", ns3::DoubleValue(-1*loss_model_params.reference_loss));
+                                   "ReferenceLoss", ns3::DoubleValue(-50));
     // const Ptr<NormalRandomVariable> nrv = CreateObject<NormalRandomVariable> ();
     // nrv->SetAttribute ("Mean", DoubleValue (loss_model_params.fading_mean));
     // nrv->SetAttribute ("Variance", DoubleValue (loss_model_params.fading_var));
